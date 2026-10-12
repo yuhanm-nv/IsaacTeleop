@@ -71,10 +71,10 @@ import { RecorderProvider, useRecorder } from './RecorderContext';
 import { SuppressWebGLRendererWhenHeadless } from './SuppressWebGLRendererWhenHeadless';
 import { TraceVisualization } from './TraceVisualization';
 import {
-  SystemNotice,
   formatSystemNotice,
   formatSystemNoticeBody,
   isSystemNoticeMessage,
+  SystemNotice,
 } from './types/serverMessages';
 
 // Performance metrics signals - raw numeric data backing the in-XR HUD.
@@ -1193,7 +1193,11 @@ function AppContent() {
           <XROrigin />
           {cloudXR2DUI && config && (
             <>
-              <RecorderComponent isConnected={isConnected} showTrace={config.showTrace ?? false} />
+              <RecorderComponent
+                isConnected={isConnected}
+                showTrace={config.showTrace ?? false}
+                referenceSpaceType={config.referenceSpaceType}
+              />
               <TraceVisualization showTrace={config.showTrace ?? false} />
               <CloudXRComponent
                 config={config}
