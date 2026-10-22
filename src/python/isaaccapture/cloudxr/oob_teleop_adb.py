@@ -1224,6 +1224,9 @@ _DEVTOOLS_SOCKET_RE = re.compile(r"@([A-Za-z0-9._+-]*_devtools_remote(?:_\d+)?)"
 def _discover_devtools_socket() -> str | None:
     """Return the bare name of the browser's DevTools abstract socket, or None.
 
+    When the device exposes more than one, the socket holding a teleop tab
+    wins; see the selection comment below.
+
     Chromium-based Android browsers expose a Unix abstract socket matching
     ``@<prefix>_devtools_remote[_<pid>]`` in ``/proc/net/unix``.  Known
     prefixes in the wild:
@@ -1254,14 +1257,41 @@ def _discover_devtools_socket() -> str | None:
                 candidates.append(m.group(1))
     if not candidates:
         return None
-    # Prefer teleop-relevant prefixes in this order, otherwise fall back to
-    # the first discovered socket.
+    # Prefer teleop-relevant prefixes in this order, otherwise keep discovery
+    # order.
     priority = ("weblayer", "com.oculus.browser", "chrome", "webview")
-    for prefix in priority:
-        for cand in candidates:
-            if cand.startswith(prefix):
-                return cand
-    return candidates[0]
+
+    def rank(name: str) -> int:
+        return next(
+            (i for i, pre in enumerate(priority) if name.startswith(pre)),
+            len(priority),
+        )
+
+    ranked = sorted(candidates, key=rank)
+    # Prefix order still decides whenever it can. Only sockets that tie at the
+    # top are ambiguous, and only those are worth a round of adb probing.
+    tied = [c for c in ranked if rank(c) == rank(ranked[0])]
+    if len(tied) == 1:
+        return tied[0]
+    # A PICO 4 Ultra exposes one weblayer_devtools_remote_<pid> per browser
+    # process, so the tie is a real one: observed with the teleop tab on the
+    # second socket while the first held only a new-tab page. Ask each in turn
+    # and keep the one that actually has a teleop tab.
+    for cand in tied:
+        try:
+            _adb_forward_cdp(cand, _CDP_LOCAL_PORT)
+        except (OobAdbError, subprocess.CalledProcessError, OSError) as exc:
+            log.debug("CDP: cannot forward to @%s: %s", cand, exc)
+            continue
+        if any(
+            "oobEnable=" in (t.get("url") or "")
+            for t in _cdp_list_tabs(_CDP_LOCAL_PORT)
+        ):
+            log.info("CDP: teleop tab found on @%s", cand)
+            return cand
+    # None has one yet. Normal before the page is opened, so hand back the
+    # best-ranked socket and let the caller go on to open it there.
+    return tied[0]
 
 
 def _adb_forward_cdp(socket_name: str, local_port: int) -> None:
