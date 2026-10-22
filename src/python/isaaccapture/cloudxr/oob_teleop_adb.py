@@ -1554,6 +1554,40 @@ async def _cdp_send_reset_panel_key(ws_url: str) -> None:
 
 
 _HEADSET_RECORDING_DIR = "/sdcard/Download"
+# The spelling that means "whatever the operator recorded last" instead of a path.
+LATEST_RECORDING = "latest"
+
+
+def _newest_recording_on_headset() -> str:
+    """Path of the most recent ``*.json`` in the headset's Download folder.
+
+    Lets a run follow straight on from a recording session without the operator
+    having to look up the generated filename.
+    """
+    out = _run_adb(
+        "newest recording",
+        [
+            "adb",
+            "shell",
+            f"ls -t {_HEADSET_RECORDING_DIR}/*.json 2>/dev/null | head -n 1",
+        ],
+        timeout=10.0,
+    )
+    path = (out or "").strip()
+    if not path or not path.startswith(_HEADSET_RECORDING_DIR):
+        raise OobAdbError(
+            f"no recording found in {_HEADSET_RECORDING_DIR} on the headset; "
+            "record one first, or pass a host path instead of 'latest'"
+        )
+    log.info("newest recording on headset: %s", path)
+    return path
+
+
+def _resolve_recording(spec: str) -> str:
+    """Turn the configured recording into a path on the headset."""
+    if spec == LATEST_RECORDING:
+        return _newest_recording_on_headset()
+    return _push_recording_to_headset(spec)
 
 
 def _push_recording_to_headset(host_path: str) -> str:
@@ -2313,7 +2347,7 @@ async def run_oob_connect(
         # --- Steps 3+4: find the teleop tab, load any recording, click CONNECT -
         recording = oob_replay_recording_from_env()
         recording_device_path = (
-            await asyncio.to_thread(_push_recording_to_headset, recording)
+            await asyncio.to_thread(_resolve_recording, recording)
             if recording
             else None
         )

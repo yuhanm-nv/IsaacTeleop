@@ -38,6 +38,20 @@ This will:
 4. Accept the self-signed certificate and click CONNECT automatically
    via Chrome DevTools Protocol (CDP)
 
+Optionally, shape the page the run starts from. Each flag below is the
+command-line spelling of the matching ``TELEOP_*`` variable in
+:ref:`the environment table <oob-environment>`; omit them all and the headset
+URL is exactly the one built today:
+
+.. code-block:: bash
+
+   python -m isaaccapture.cloudxr.service run --accept-eula --setup-oob        --oob-reference-space local        --oob-replay-pacing frame        --oob-recording latest        --oob-recording-controls
+
+``--oob-recording`` takes a host path, which is pushed to the headset, or
+``latest``, which picks the newest recording already in its Download folder.
+Either way the file is only *selected* in the client; starting the replay
+remains an operator action.
+
 Ordinary headset absence, an ``offline`` or ``unauthorized`` transport, and
 browser recovery failures leave the host running with a degraded OOB status.
 The lifecycle retries for 60 seconds at a 5-second cadence, then keeps
@@ -535,6 +549,8 @@ When no URL override is present, form fields restore from ``localStorage``, with
 exception: a saved device profile other than ``Custom`` is re-applied from the current
 profile table at startup, so profile default updates (frame rate, bitrate, codec)
 reach returning clients. Only ``Custom`` keeps manually edited values.
+
+.. _oob-environment:
 
 Environment variables
 ---------------------

@@ -51,6 +51,25 @@ class TestRunFlags:
         default = os.path.expanduser("~/.cloudxr")
         assert cli._run_flags(_run_args(cloudxr_install_dir=default)) == []
 
+    def test_oob_client_flags_round_trip(self):
+        """`start` must hand the detached `run` the same client setup it was given."""
+        args = _run_args(
+            setup_oob=True,
+            oob_reference_space="local",
+            oob_replay_pacing="frame",
+            oob_recording="latest",
+            oob_recording_controls=True,
+        )
+        flags = cli._run_flags(args)
+        assert flags[:2] == ["--setup-oob", "--oob-recording-controls"]
+        for pair in (
+            ["--oob-reference-space", "local"],
+            ["--oob-replay-pacing", "frame"],
+            ["--oob-recording", "latest"],
+        ):
+            i = flags.index(pair[0])
+            assert flags[i : i + 2] == pair
+
     def test_accept_eula_is_never_baked_into_the_unit(self):
         """Acceptance is a marker file written at install time, not a unit flag."""
         assert "--accept-eula" not in cli._run_flags(_run_args(accept_eula=True))
@@ -287,3 +306,45 @@ class TestOutputChannels:
         with patch("sys.stdout.isatty", return_value=False):
             cli._out("\033[33mplain\033[0m")
         assert capsys.readouterr().out == "plain\n"
+
+
+class TestOobClientFlags:
+    """The --oob-* overrides, and the promise that omitting them changes nothing."""
+
+    def test_flags_set_the_variables_the_oob_code_reads(self, monkeypatch):
+        for env_name in cli._OOB_CLIENT_FLAG_ENV.values():
+            monkeypatch.delenv(env_name, raising=False)
+        monkeypatch.delenv("TELEOP_CLIENT_SHOW_RECORDING_CONTROLS", raising=False)
+        cli._apply_oob_client_flags(
+            _run_args(
+                setup_oob=True,
+                oob_reference_space="local",
+                oob_replay_pacing="frame",
+                oob_immersive_mode="vr",
+                oob_recording="/tmp/take-7.json",
+                oob_recording_controls=True,
+            )
+        )
+        assert os.environ["TELEOP_CLIENT_REFERENCE_SPACE"] == "local"
+        assert os.environ["TELEOP_CLIENT_REPLAY_PACING"] == "frame"
+        assert os.environ["TELEOP_CLIENT_IMMERSIVE_MODE"] == "vr"
+        assert os.environ["TELEOP_OOB_RECORDING"] == "/tmp/take-7.json"
+        assert os.environ["TELEOP_CLIENT_SHOW_RECORDING_CONTROLS"] == "true"
+
+    def test_omitting_them_touches_nothing(self, monkeypatch):
+        """The whole point: an existing command keeps building the URL it builds today."""
+        for env_name in cli._OOB_CLIENT_FLAG_ENV.values():
+            monkeypatch.delenv(env_name, raising=False)
+        monkeypatch.delenv("TELEOP_CLIENT_SHOW_RECORDING_CONTROLS", raising=False)
+        cli._apply_oob_client_flags(_run_args(setup_oob=True))
+        for env_name in cli._OOB_CLIENT_FLAG_ENV.values():
+            assert env_name not in os.environ
+        assert "TELEOP_CLIENT_SHOW_RECORDING_CONTROLS" not in os.environ
+
+    def test_they_require_setup_oob(self, monkeypatch):
+        """Without --setup-oob nothing opens the page, so the override has no target."""
+        monkeypatch.delenv("TELEOP_CLIENT_REFERENCE_SPACE", raising=False)
+        with pytest.raises(SystemExit):
+            cli._apply_oob_client_flags(
+                _run_args(setup_oob=False, oob_reference_space="local")
+            )

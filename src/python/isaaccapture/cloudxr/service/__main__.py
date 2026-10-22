@@ -80,6 +80,76 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
             "TELEOP_WEB_CLIENT_STATIC_DIR or ~/.cloudxr/static-client."
         ),
     )
+    _add_oob_client_arguments(parser)
+
+
+# Each flag below is the command-line spelling of a TELEOP_* variable the OOB
+# code already reads. Omitting one leaves the variable untouched, so a command
+# without them builds exactly the headset URL it builds today.
+_OOB_CLIENT_FLAG_ENV = {
+    "oob_reference_space": "TELEOP_CLIENT_REFERENCE_SPACE",
+    "oob_replay_pacing": "TELEOP_CLIENT_REPLAY_PACING",
+    "oob_immersive_mode": "TELEOP_CLIENT_IMMERSIVE_MODE",
+    "oob_recording": "TELEOP_OOB_RECORDING",
+}
+
+
+def _add_oob_client_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the optional ``--setup-oob`` client overrides.
+
+    These shape the teleop page a run starts from. They exist because a
+    benchmark has to replay the same input the same way every time, which
+    otherwise means editing the headset's URL by hand.
+    """
+    parser.add_argument(
+        "--oob-reference-space",
+        choices=("auto", "local-floor", "local", "viewer", "unbounded"),
+        default=None,
+        help=(
+            "XR reference space for the teleop page. Recording and replay are "
+            "only comparable across runs when this is pinned. Requires --setup-oob."
+        ),
+    )
+    parser.add_argument(
+        "--oob-replay-pacing",
+        choices=("frame", "time"),
+        default=None,
+        help=(
+            "Input replay pacing. 'frame' advances one recorded frame per XR "
+            "frame callback, so a replay is reproducible regardless of how fast "
+            "the server renders. Requires --setup-oob."
+        ),
+    )
+    parser.add_argument(
+        "--oob-immersive-mode",
+        choices=("ar", "vr"),
+        default=None,
+        help=(
+            "WebXR session mode. Needed on headsets that reject immersive-ar, "
+            "such as the PICO 4 Ultra. Requires --setup-oob."
+        ),
+    )
+    parser.add_argument(
+        "--oob-recording",
+        type=str,
+        default=None,
+        metavar="PATH|latest",
+        help=(
+            "Start the run with a recording already selected in the client. A "
+            "path is pushed to the headset; 'latest' picks the newest recording "
+            "already in its Download folder. The operator still starts the "
+            "replay. Requires --setup-oob."
+        ),
+    )
+    parser.add_argument(
+        "--oob-recording-controls",
+        action="store_true",
+        default=False,
+        help=(
+            "Show the in-XR recording controls, which carry the replay buttons. "
+            "Requires --setup-oob."
+        ),
+    )
 
 
 def _run_flags(args: argparse.Namespace) -> list[str]:
@@ -94,9 +164,13 @@ def _run_flags(args: argparse.Namespace) -> list[str]:
         flags += ["--cloudxr-install-dir", args.cloudxr_install_dir]
     if args.cloudxr_env_config:
         flags += ["--cloudxr-env-config", args.cloudxr_env_config]
-    for name in ("setup_oob", "usb_local", "host_client"):
-        if getattr(args, name):
+    for name in ("setup_oob", "usb_local", "host_client", "oob_recording_controls"):
+        if getattr(args, name, False):
             flags.append("--" + name.replace("_", "-"))
+    for name in _OOB_CLIENT_FLAG_ENV:
+        value = getattr(args, name, None)
+        if value:
+            flags += ["--" + name.replace("_", "-"), value]
     return flags
 
 
@@ -268,10 +342,32 @@ def _print_service_summary(
     )
 
 
+def _apply_oob_client_flags(args: argparse.Namespace) -> None:
+    """Turn the ``--oob-*`` client flags into the variables the OOB code reads.
+
+    A flag wins over an inherited variable of the same name: it is the more
+    specific statement of intent for this one run.
+    """
+    given = [
+        name
+        for name in (*_OOB_CLIENT_FLAG_ENV, "oob_recording_controls")
+        if getattr(args, name, None)
+    ]
+    if given and not args.setup_oob:
+        _fail("--" + given[0].replace("_", "-") + " requires --setup-oob.")
+    for name, env_name in _OOB_CLIENT_FLAG_ENV.items():
+        value = getattr(args, name, None)
+        if value:
+            os.environ[env_name] = value
+    if args.oob_recording_controls:
+        os.environ["TELEOP_CLIENT_SHOW_RECORDING_CONTROLS"] = "true"
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     """Run the service in the foreground until interrupted."""
     if args.usb_local and not args.setup_oob:
         _fail("--usb-local requires --setup-oob.")
+    _apply_oob_client_flags(args)
     if args.usb_local and os.getenv("TELEOP_OOB_HUB_ONLY"):
         _fail(
             "TELEOP_OOB_HUB_ONLY is not compatible with --usb-local "
