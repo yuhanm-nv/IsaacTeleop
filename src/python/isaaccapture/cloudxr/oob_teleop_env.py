@@ -458,6 +458,17 @@ def client_ui_fields_from_env() -> dict:
     return out
 
 
+def oob_replay_recording_from_env() -> str:
+    """Host path of a recording to load into the client, or ``""``.
+
+    Set ``TELEOP_OOB_RECORDING`` to start a run with the recording already
+    selected: the file is pushed to the headset and chosen in the client's
+    recording file input, before CONNECT. Unset (the default) leaves the client
+    with no recording loaded, exactly as before.
+    """
+    return os.environ.get("TELEOP_OOB_RECORDING", "").strip()
+
+
 def teleop_client_route_from_env() -> str:
     """Return the HashRouter fragment to append to the headset bookmark URL.
 

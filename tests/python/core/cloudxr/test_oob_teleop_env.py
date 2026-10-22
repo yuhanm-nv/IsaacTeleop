@@ -24,6 +24,7 @@ from cloudxr_py_test_ns.oob_teleop_env import (
     default_initial_stream_config,
     default_web_client_origin,
     guess_lan_ipv4,
+    oob_replay_recording_from_env,
     versioned_web_client_url,
     print_hosted_client_line,
     print_oob_hub_startup_banner,
@@ -52,6 +53,7 @@ def clear_teleop_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "TELEOP_CLIENT_REFERENCE_SPACE",
         "TELEOP_CLIENT_REPLAY_PACING",
         "TELEOP_CLIENT_SHOW_RECORDING_CONTROLS",
+        "TELEOP_OOB_RECORDING",
         "TELEOP_CLIENT_RECONNECT_MAX_ATTEMPTS",
         "TELEOP_CLIENT_RECONNECT_DELAY_MS",
         "TELEOP_CLIENT_STREAM_ATTACH_TIMEOUT_MS",
@@ -914,3 +916,16 @@ def test_print_hosted_client_line_hides_credentials() -> None:
     assert "controlToken=<REDACTED>" in out
     assert "turnCredential=<REDACTED>" in out
     assert "port=48322" in out
+
+
+def test_oob_replay_recording_unset_is_empty(clear_teleop_env: None) -> None:
+    """No recording configured is the default: nothing is pushed or selected."""
+    assert oob_replay_recording_from_env() == ""
+
+
+def test_oob_replay_recording_from_env(
+    clear_teleop_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The configured host path is returned stripped."""
+    monkeypatch.setenv("TELEOP_OOB_RECORDING", "  /tmp/take-7.json  ")
+    assert oob_replay_recording_from_env() == "/tmp/take-7.json"
