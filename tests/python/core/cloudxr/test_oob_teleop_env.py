@@ -48,6 +48,10 @@ def clear_teleop_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "TELEOP_STREAM_PORT",
         "TELEOP_CLIENT_CODEC",
         "TELEOP_CLIENT_PANEL_HIDDEN_AT_START",
+        "TELEOP_CLIENT_IMMERSIVE_MODE",
+        "TELEOP_CLIENT_REFERENCE_SPACE",
+        "TELEOP_CLIENT_REPLAY_PACING",
+        "TELEOP_CLIENT_SHOW_RECORDING_CONTROLS",
         "TELEOP_CLIENT_RECONNECT_MAX_ATTEMPTS",
         "TELEOP_CLIENT_RECONNECT_DELAY_MS",
         "TELEOP_CLIENT_STREAM_ATTACH_TIMEOUT_MS",
@@ -207,6 +211,45 @@ def test_build_headset_bookmark_url_with_token() -> None:
     )
     q = parse_qs(urlparse(u).query)
     assert q["controlToken"] == ["secret123"]
+
+
+def test_build_headset_bookmark_url_with_replay_overrides() -> None:
+    """Replay-related fields reach the headset URL so a run is reproducible without hand-editing it."""
+    u = build_headset_bookmark_url(
+        web_client_base="https://h.test/",
+        stream_config={
+            "serverIP": "10.0.0.1",
+            "port": 48322,
+            "immersiveMode": "vr",
+            "referenceSpace": "local",
+            "replayPacing": "frame",
+            "showRecordingControls": True,
+        },
+    )
+    q = parse_qs(urlparse(u).query)
+    assert q["immersiveMode"] == ["vr"]
+    assert q["referenceSpace"] == ["local"]
+    assert q["replayPacing"] == ["frame"]
+    assert q["showRecordingControls"] == ["true"]
+
+
+def test_build_headset_bookmark_url_omits_unset_replay_overrides() -> None:
+    """Without the overrides the query is unchanged - existing callers keep today's URL."""
+    q = parse_qs(
+        urlparse(
+            build_headset_bookmark_url(
+                web_client_base="https://h.test/",
+                stream_config={"serverIP": "10.0.0.1", "port": 48322},
+            )
+        ).query
+    )
+    for key in (
+        "immersiveMode",
+        "referenceSpace",
+        "replayPacing",
+        "showRecordingControls",
+    ):
+        assert key not in q
 
 
 def test_build_headset_bookmark_url_with_codec() -> None:
@@ -369,6 +412,50 @@ def test_client_ui_fields_from_env_panel_hidden(
     monkeypatch.setenv("TELEOP_CLIENT_PANEL_HIDDEN_AT_START", "true")
     fields = client_ui_fields_from_env()
     assert fields["panelHiddenAtStart"] is True
+
+
+@pytest.mark.parametrize(
+    ("env_name", "key", "value"),
+    [
+        ("TELEOP_CLIENT_IMMERSIVE_MODE", "immersiveMode", "vr"),
+        ("TELEOP_CLIENT_REFERENCE_SPACE", "referenceSpace", "local"),
+        ("TELEOP_CLIENT_REPLAY_PACING", "replayPacing", "frame"),
+    ],
+)
+def test_client_ui_fields_from_env_passthrough_strings(
+    clear_teleop_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+    env_name: str,
+    key: str,
+    value: str,
+) -> None:
+    """Each string override reaches the matching client field verbatim."""
+    monkeypatch.setenv(env_name, value)
+    assert client_ui_fields_from_env()[key] == value
+
+
+def test_client_ui_fields_from_env_show_recording_controls(
+    clear_teleop_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TELEOP_CLIENT_SHOW_RECORDING_CONTROLS parses both truthy and falsey spellings."""
+    monkeypatch.setenv("TELEOP_CLIENT_SHOW_RECORDING_CONTROLS", "on")
+    assert client_ui_fields_from_env()["showRecordingControls"] is True
+    monkeypatch.setenv("TELEOP_CLIENT_SHOW_RECORDING_CONTROLS", "off")
+    assert client_ui_fields_from_env()["showRecordingControls"] is False
+
+
+def test_client_ui_fields_from_env_unset_stays_absent(
+    clear_teleop_env: None,
+) -> None:
+    """Unset overrides add no keys: an operator who sets none sees the URL they see today."""
+    fields = client_ui_fields_from_env()
+    for key in (
+        "immersiveMode",
+        "referenceSpace",
+        "replayPacing",
+        "showRecordingControls",
+    ):
+        assert key not in fields
 
 
 def test_client_ui_fields_from_env_never_sets_reconnect_enabled(
