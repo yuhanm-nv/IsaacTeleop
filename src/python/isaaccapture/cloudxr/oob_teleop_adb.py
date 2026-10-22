@@ -1590,15 +1590,29 @@ def _resolve_recording(spec: str) -> str:
     return _push_recording_to_headset(spec)
 
 
+# Recordings already pushed this run, keyed by what identifies the bytes.
+# Connecting retries until the application has an XR session, and each attempt
+# re-opens the page and re-selects the file; without this, a sim that takes ten
+# minutes to load the scene pushes the same recording dozens of times.
+_pushed_recordings: dict[tuple[str, int, int], str] = {}
+
+
 def _push_recording_to_headset(host_path: str) -> str:
     """Copy a recording onto the headset and return its on-device path.
 
     DOM.setFileInputFiles names a path in the *browser's* filesystem, so the
-    file has to exist on the headset first.
+    file has to exist on the headset first. An edited file is pushed again:
+    the key covers size and mtime, not just the name.
     """
     src = Path(host_path)
     if not src.is_file():
         raise OobAdbError(f"recording not found: {src}")
+    stat_result = src.stat()
+    key = (str(src.resolve()), stat_result.st_size, stat_result.st_mtime_ns)
+    cached = _pushed_recordings.get(key)
+    if cached:
+        log.debug("recording already on headset this run: %s", cached)
+        return cached
     device_path = f"{_HEADSET_RECORDING_DIR}/{src.name}"
     try:
         _adb_run(
@@ -1613,6 +1627,7 @@ def _push_recording_to_headset(host_path: str) -> str:
         raise OobAdbError(
             f"adb push {src} -> {device_path} failed (rc={exc.returncode}): {detail}"
         ) from exc
+    _pushed_recordings[key] = device_path
     log.info("pushed recording to headset: %s", device_path)
     return device_path
 

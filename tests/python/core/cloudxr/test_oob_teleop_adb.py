@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import http.server
 import json
+import os
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -1773,3 +1774,38 @@ async def test_monitor_without_callback_still_logs_and_keeps_watching() -> None:
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
+
+
+class TestRecordingPush:
+    """Pushing a recording, and not pushing it again on every connect retry."""
+
+    def _reset(self):
+        adb_module._pushed_recordings.clear()
+
+    @patch("cloudxr_py_test_ns.oob_teleop_adb._adb_run")
+    def test_pushes_once_and_reuses_the_device_path(self, mock_adb, tmp_path):
+        """Connecting retries until the sim has an XR session; one push covers them all."""
+        self._reset()
+        rec = tmp_path / "take-7.json"
+        rec.write_text("{}", encoding="utf-8")
+        first = adb_module._push_recording_to_headset(str(rec))
+        second = adb_module._push_recording_to_headset(str(rec))
+        assert first == second == "/sdcard/Download/take-7.json"
+        assert mock_adb.call_count == 1
+
+    @patch("cloudxr_py_test_ns.oob_teleop_adb._adb_run")
+    def test_an_edited_recording_is_pushed_again(self, mock_adb, tmp_path):
+        """The key covers size and mtime, so re-recording to the same name still lands."""
+        self._reset()
+        rec = tmp_path / "take-7.json"
+        rec.write_text("{}", encoding="utf-8")
+        adb_module._push_recording_to_headset(str(rec))
+        rec.write_text('{"frames": []}', encoding="utf-8")
+        os.utime(rec, (0, 0))
+        adb_module._push_recording_to_headset(str(rec))
+        assert mock_adb.call_count == 2
+
+    def test_a_missing_recording_is_named_in_the_error(self, tmp_path):
+        self._reset()
+        with pytest.raises(OobAdbError, match="recording not found"):
+            adb_module._push_recording_to_headset(str(tmp_path / "nope.json"))
