@@ -564,6 +564,21 @@ Environment variables
      - Default video codec for headset bookmarks
    * - ``TELEOP_CLIENT_PANEL_HIDDEN_AT_START``
      - Hide control panel on load (``true`` / ``false``)
+   * - ``TELEOP_CLIENT_IMMERSIVE_MODE``
+     - WebXR session mode for headset bookmarks: ``vr`` or ``ar``. Needed on
+       headsets that reject ``immersive-ar``, such as the PICO 4 Ultra.
+   * - ``TELEOP_CLIENT_REFERENCE_SPACE``
+     - XR reference space: ``auto``, ``local-floor``, ``local``, ``viewer`` or
+       ``unbounded``. Recording and replay are only comparable across runs when
+       this is pinned.
+   * - ``TELEOP_CLIENT_REPLAY_PACING``
+     - Input replay pacing: ``frame`` or ``time``. ``frame`` advances one
+       recorded frame per XR frame callback, so a replay is reproducible
+       regardless of how fast the server renders.
+   * - ``TELEOP_CLIENT_SHOW_RECORDING_CONTROLS``
+     - Show the in-XR recording controls (``true`` / ``false``), which carry the
+       replay buttons an operator uses after ``TELEOP_OOB_RECORDING`` has loaded
+       a file.
    * - ``TELEOP_CLIENT_ROUTE``
      - HashRouter fragment appended to the bookmark URL. Default empty
        (no fragment — the web client picks its own landing route). Set
@@ -598,6 +613,11 @@ Environment variables
        Before each new browser launch, ADB must confirm
        ``mWakefulness=Awake``; wear or unlock the headset (or cover its
        proximity sensor) when the service reports that it is asleep.
+   * - ``TELEOP_OOB_RECORDING``
+     - Host path of a recorded session to start the run with. The file is
+       pushed to the headset and selected in the client's recording file input
+       before CONNECT, so the operator only has to start the replay. Unset by
+       default, so nothing is loaded.
    * - ``TELEOP_OOB_RECOVERY_TIMEOUT_SEC``
      - Positive finite recovery-episode duration in seconds (default ``60``).
        Expiry changes to observation mode; it never stops the host. If this is
